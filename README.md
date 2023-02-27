@@ -1,2 +1,0 @@
-# DEV
-Test environment
