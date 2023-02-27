@@ -7,4 +7,4 @@ USE DEVAPP;
 CREATE TABLE departments(
     DEPT int(4) primary key
     DEPT_NAME varchar(250)
-)
+    )
