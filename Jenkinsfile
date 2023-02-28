@@ -28,7 +28,7 @@ pipeline {
           steps {
             script {
               currentBuild.result = "FAILURE"
-              throw new Exception("The port should be under port range 3000-4999")
+              throw new Exception("The port should be under port range 3000-3999")
             }
           }
         }
