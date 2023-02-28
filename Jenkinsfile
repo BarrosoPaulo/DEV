@@ -1,6 +1,4 @@
-def validPort(value){
-  return value < 3000 && value > 4000
-}
+
 
 pipeline {
     agent {
@@ -14,17 +12,17 @@ pipeline {
     parameters {
         string name: 'ENVIRONMENT_NAME', trim: true
         choice(name: 'DB_ENGINE', choices: ['Mysql', 'Postgres'], description: 'Select the database engine')
-        password defaultValue: '', description: 'Password to use for MySQL container - root user', name: 'MYSQL_PASSWORD'
-        string name: 'MYSQL_PORT', trim: true, description: 'Port range 3000-3999'
+        password defaultValue: '', description: 'Password to use for DB container - root user', name: 'DB_PASSWORD'
+        string name: 'DB_PORT', trim: true, description: 'Port range 3000-3999'
 
         booleanParam(name: 'SKIP_STEP_1', defaultValue: false, description: 'STEP 1 - RE-CREATE DOCKER IMAGE')
     }
   
     stages {
-        stage('Port range'){
+        stage('Validate parameters input'){
           when {
             expression { 
-                return params.MYSQL_PORT ==~ /^(?!(3[0-9][0-9][0-9])$).*/
+                return params.DB_PORT ==~ /^(?!(3[0-9][0-9][0-9])$).*/
               }
           }
           steps {
@@ -49,9 +47,9 @@ pipeline {
               if (!params.SKIP_STEP_1){
 
                 if(params.DB_ENGINE == 'Mysql'){
-                  echo "Creating docker image with name $params.ENVIRONMENT_NAME using port: $params.MYSQL_PORT"
+                  echo "Creating docker image with name $params.ENVIRONMENT_NAME using port: $params.DB_PORT"
                   sh """
-                  sed 's/<PASSWORD>/$params.MYSQL_PASSWORD/g' pipelines/include/create_developer.template > pipelines/include/create_developer.sql
+                  sed 's/<PASSWORD>/$params.DB_PASSWORD/g' pipelines/include/create_developer.template > pipelines/include/create_developer.sql
                   """
 
                   sh """
@@ -63,22 +61,15 @@ pipeline {
                   echo "Skipping STEP1"
               }
             }
-          }
-        }
-        stage('Create latest Docker portgres image'){
-          when {
-            expression {
-              params.DB_ENGINE == 'Postgres'
-            }
-          }
-          steps {
             script {
               if (!params.SKIP_STEP_1){
-                echo "Creating docker image with name $params.ENVIRONMENT_NAME using port: $params.MYSQL_PORT"
+                 if(params.DB_ENGINE == 'Postgres'){
+                  echo "Creating docker image with name $params.ENVIRONMENT_NAME using port: $params.DB_PORT"
                 
-                sh """
-                docker build . -f pipelines/Dockerfile.postgres -t $params.ENVIRONMENT_NAME:latest
-                """
+                  sh """
+                  docker build . -f pipelines/Dockerfile.postgres -t $params.ENVIRONMENT_NAME:latest
+                  """
+                 }
               }
             }
           }
@@ -86,18 +77,28 @@ pipeline {
         stage('Start new container using latest image and create user') {
             steps {     
               script {
+                def dateTime = (sh(script: "date +%Y%m%d%H%M%S", returnStdout: true).trim())
+                def containerName = "${params.ENVIRONMENT_NAME}_${dateTime}"
+                
                 if(params.DB_ENGINE == 'Mysql'){
-                  def dateTime = (sh(script: "date +%Y%m%d%H%M%S", returnStdout: true).trim())
-                  def containerName = "${params.ENVIRONMENT_NAME}_${dateTime}"
-                                    
                   sh """
-                  docker run -itd --name ${containerName} --rm -e MYSQL_ROOT_PASSWORD=$params.MYSQL_PASSWORD -p $params.MYSQL_PORT:3306 $params.ENVIRONMENT_NAME:latest
+                  docker run -itd --name ${containerName} --rm -e MYSQL_ROOT_PASSWORD=$params.DB_PASSWORD -p $params.DB_PORT:3306 $params.ENVIRONMENT_NAME:latest
                   """
                   
                   sleep(180) // iterate with container for checking port state
 
                   sh """
-                  docker exec ${containerName} /bin/bash -c 'mysql --user="root" --password="$params.MYSQL_PASSWORD" < /scripts/create_developer.sql'
+                  docker exec ${containerName} /bin/bash -c 'mysql --user="root" --password="$params.DB_PASSWORD" < /scripts/create_developer.sql'
+                  """
+
+                  sh """
+                  docker exec ${containerName} /bin/bash -c 'mysql --user="root" --password="$params.DB_PASSWORD" < /scripts/create_table.sql'
+                  """
+
+                  echo "Docker container created: $containerName"
+                }else if(params.DB_ENGINE == 'Postgres'){
+                  sh """
+                  docker run -itd --name ${containerName} --rm -e POSTGRES_PASSWORD=$params.DB_PASSWORD -p $params.DB_PORT:5432 $params.ENVIRONMENT_NAME:latest
                   """
 
                   echo "Docker container created: $containerName"
@@ -105,24 +106,6 @@ pipeline {
               }
             }
         }
-        stage('Start new Postgres container'){
-          when {
-            expression {
-              params.DB_ENGINE == 'Postgres'
-            }
-          }
-          steps {
-            script {
-              def dateTime = (sh(script: "date +%Y%m%d%H%M%S", returnStdout: true).trim())
-              def containerName = "${params.ENVIRONMENT_NAME}_${dateTime}"
-
-              sh """
-              docker run -itd --name ${containerName} --rm -e POSTGRES_PASSWORD=$params.MYSQL_PASSWORD -p $params.MYSQL_PORT:5432 $params.ENVIRONMENT_NAME:latest
-              """
-
-              echo "Docker container created: $containerName"
-            }
-          }
-        }
     }
+
 }
