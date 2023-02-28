@@ -1,6 +1,7 @@
 FROM mysql:latest
 
 COPY include/create_developer.sql /scripts/
+COPY include/create_table.sql /scripts/
 
 ENTRYPOINT ["docker-entrypoint.sh"]
 
